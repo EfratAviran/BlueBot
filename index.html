@@ -1,0 +1,1108 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Blue-Bot Plus | אפליקציית פדגוגיה לגן</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- React & ReactDOM -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <!-- Babel for JSX compilation -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Google Fonts for Assistant & Fredoka (Rounded playful font) -->
+    <link href="https://fonts.googleapis.com/css2?family=Assistant:wght@300;400;600;700;800&family=Fredoka:wght@400;600;700&display=swap" rel="stylesheet">
+    
+    <style>
+        body {
+            font-family: 'Assistant', 'Fredoka', sans-serif;
+            background: linear-gradient(135deg, #fef08a 0%, #ccfbf1 50%, #e0f2fe 100%);
+            margin: 0;
+            padding: 0;
+            color: #1e293b;
+            min-height: 100vh;
+        }
+        .playful-title {
+            font-family: 'Fredoka', sans-serif;
+        }
+        .grid-board {
+            display: grid;
+            grid-template-columns: repeat(6, 1fr);
+            grid-template-rows: repeat(6, 1fr);
+            gap: 4px;
+            background-color: #cbd5e1;
+            border: 8px solid #475569;
+            border-radius: 24px;
+            aspect-ratio: 1 / 1;
+            width: 100%;
+            max-width: 480px;
+            margin: 0 auto;
+            overflow: relative;
+            box-shadow: 0 20px 40px rgba(15, 23, 42, 0.15);
+            position: relative;
+        }
+        .grid-cell {
+            background-color: rgba(255, 255, 255, 0.95);
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 2px;
+            text-align: center;
+            transition: all 0.2s ease;
+            user-select: none;
+        }
+        .grid-cell:hover {
+            background-color: #fefefc;
+            box-shadow: inset 0 0 10px rgba(20, 184, 166, 0.2);
+        }
+        .card-image {
+            width: 80%;
+            height: 65%;
+            object-fit: contain;
+            border-radius: 12px;
+            margin-bottom: 2px;
+            transition: transform 0.2s;
+        }
+        .card-title {
+            font-size: 0.7rem;
+            font-weight: 700;
+            color: #1e293b;
+            background: #f1f5f9;
+            padding: 1px 4px;
+            border-radius: 4px;
+            line-height: 1.1;
+            max-width: 95%;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        /* Static Bot marker styling */
+        .static-bot-marker {
+            width: 85%;
+            height: 85%;
+            object-fit: contain;
+            user-select: none;
+            animation: float 2.5s ease-in-out infinite;
+        }
+        @keyframes float {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-6px); }
+        }
+        /* Custom Loader */
+        .loader-ring {
+            display: inline-block;
+            position: relative;
+            width: 80px;
+            height: 80px;
+        }
+        .loader-ring div {
+            box-sizing: border-box;
+            display: block;
+            position: absolute;
+            width: 64px;
+            height: 64px;
+            margin: 8px;
+            border: 6px solid #0d9488;
+            border-radius: 50%;
+            animation: loader-ring 1.2s cubic-bezier(0.5, 0, 0.5, 1) infinite;
+            border-color: #0d9488 transparent transparent transparent;
+        }
+        @keyframes loader-ring {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.6);
+            box-shadow: 0 8px 32px rgba(31, 38, 135, 0.05);
+        }
+        /* Printable grid adjustment */
+        @media print {
+            body { background: white; color: black; }
+            .no-print { display: none !important; }
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        // --- Configuration ---
+        const apiKey = ""; // Canvas runtime injection
+
+        // קישור Raw ישיר לתמונת הבלו-בוט בחשבון ה-GitHub שלך (EfratAviran/BlueBot) - בפורמט jpg
+        const BLUE_BOT_IMAGE_URL = "https://raw.githubusercontent.com/EfratAviran/BlueBot/main/bluebot.jpg";
+        
+        // קישור Raw ישיר ללוגו של מתיא חיפה בחשבון ה-GitHub שלך (EfratAviran/BlueBot) - בשם matia.png
+        const MATYA_HAIFA_LOGO_URL = "https://raw.githubusercontent.com/EfratAviran/BlueBot/main/matia.png";
+
+        // Fallback Logo Component in case of image load error
+        const MatyaHaifaFallback = () => (
+            <div className="flex flex-col items-center justify-center bg-white/95 text-teal-800 px-4 py-2 rounded-2xl shadow-sm border-2 border-teal-400 font-bold">
+                <span className="text-[12px] font-extrabold tracking-tight">מתיא חיפה</span>
+                <span className="text-[9px] font-bold text-teal-600">שילוב והכלה</span>
+            </div>
+        );
+
+        // --- Synthetic Sound Maker (Web Audio API) for simple UI feedback ---
+        const playBeep = (type = 'click') => {
+            try {
+                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+
+                if (type === 'click') {
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(1000, ctx.currentTime);
+                    gain.gain.setValueAtTime(0.05, ctx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.05);
+                    osc.start();
+                    osc.stop(ctx.currentTime + 0.05);
+                } else if (type === 'success') {
+                    const now = ctx.currentTime;
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(523.25, now);
+                    osc.frequency.setValueAtTime(659.25, now + 0.1);
+                    osc.frequency.setValueAtTime(783.99, now + 0.2);
+                    gain.gain.setValueAtTime(0.1, now);
+                    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.4);
+                    osc.start();
+                    osc.stop(now + 0.4);
+                }
+            } catch (e) {
+                console.log("Audio not supported or blocked by browser gesture.");
+            }
+        };
+
+        // --- Fetch Helper with Exponential Backoff ---
+        const fetchWithRetry = async (url, options, retries = 5, delay = 1000) => {
+            try {
+                const response = await fetch(url, options);
+                if (!response.ok) {
+                    let errMsg = `שגיאה: ${response.status}`;
+                    try {
+                        const errJson = await response.json();
+                        if (errJson.error && errJson.error.message) errMsg = errJson.error.message;
+                    } catch(e) {}
+
+                    if ((response.status === 429 || response.status >= 500) && retries > 0) {
+                        await new Promise(res => setTimeout(res, delay));
+                        return fetchWithRetry(url, options, retries - 1, delay * 2);
+                    }
+                    throw new Error(errMsg);
+                }
+                return response;
+            } catch (err) {
+                if (retries > 0) {
+                    await new Promise(res => setTimeout(res, delay));
+                    return fetchWithRetry(url, options, retries - 1, delay * 2);
+                }
+                throw err;
+            }
+        };
+
+        // --- API CALL: Generate Activity Plan (Gemini 2.5 Flash) ---
+        const generateActivityPlan = async (topic, description) => {
+            let prompt = `אתה מדריך ומומחה פדגוגי בכיר לגיל הרך וחינוך מיוחד. הגננת ביקשה ליצור פעילות לרובוט Blue-Bot (חיפושית הקידוד) בנושא: "${topic}".\n`;
+            if (description && description.trim() !== '') {
+                prompt += `אוצר מילים מבוקש או מטרות פדגוגיות שהוגדרו על ידי הגננת: "${description}".\n`;
+            }
+            prompt += `
+משטח הבלובוט הוא גריד של 6x6 משבצות.
+עליך לייצר מערך קצר, פשוט, צבעוני ומתוק שכולל כותרת מזמינה לילדים, סוג משחק, מטרה פדגוגית ברורה, הנחיות לפעילות בסיסית, הנחיות לפעילות מתקדמת (המתמקדת ברובוט), והוראות לפעילות תנועתית/חווייתית במרחב הגן העושה שימוש בכרטיסיות המודפסות מחוץ למשטח הבלו-בוט (ללא הרובוט).
+עליך ליצור בדיוק 5 כרטיסיות מגוונות המתאימות לנושא.
+
+החזר פורמט JSON בלבד, ללא הסברים נוספים או תגיות מרקדאון מחוץ ל-JSON.
+
+כללים לכרטיסיות:
+- row ו-col צריכים להיות מספרים שלמים מ-0 עד 5. (0,0 מייצג את הפינה העליונה. 5,5 מייצג את הפינה התחתונה). ודא שאין כפילויות במיקומים של הכרטיסיות או של הבוט.
+- botStartPos חייב להיות בטווח 0-5.
+- englishPrompt צריך להיות באנגלית, תיאור פשוט מאוד, מתוק וברור בסגנון קוואיי (Kawaii style) לילדים:
+  "A simple, flat vector kawaii style illustration of [item], happy expression, vibrant colors, white background, educational children style, isolated, vector graphic"
+`;
+
+            const payload = {
+                contents: [{ parts: [{ text: prompt }] }],
+                generationConfig: {
+                    responseMimeType: "application/json",
+                    responseSchema: {
+                        type: "OBJECT",
+                        properties: {
+                            activityTitle: { type: "STRING" },
+                            activityType: { type: "STRING" },
+                            goal: { type: "STRING" },
+                            basicInstructions: { type: "STRING", description: "הנחיות ברורות לפעילות בסיסית (שלב א' או גיל צעיר)" },
+                            advancedInstructions: { type: "STRING", description: "הנחיות מאתגרות לפעילות מתקדמת עם הרובוט (שלב ב' או גיל בוגר)" },
+                            spaceActivityInstructions: { type: "STRING", description: "הוראות לפעילות נוספת במרחב הגן באמצעות הכרטיסיות המודפסות מחוץ למשטח הבלו-בוט" },
+                            botStartPos: {
+                                type: "OBJECT",
+                                properties: { 
+                                    row: { type: "INTEGER" }, 
+                                    col: { type: "INTEGER" } 
+                                },
+                                required: ["row", "col"]
+                            },
+                            cards: {
+                                type: "ARRAY",
+                                items: {
+                                    type: "OBJECT",
+                                    properties: {
+                                        id: { type: "STRING" },
+                                        hebrewName: { type: "STRING" },
+                                        englishPrompt: { type: "STRING" },
+                                        row: { type: "INTEGER" },
+                                        col: { type: "INTEGER" }
+                                    },
+                                    required: ["id", "hebrewName", "englishPrompt", "row", "col"]
+                                }
+                            }
+                        },
+                        required: ["activityTitle", "activityType", "goal", "basicInstructions", "advancedInstructions", "spaceActivityInstructions", "botStartPos", "cards"]
+                    }
+                }
+            };
+
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+            const response = await fetchWithRetry(apiUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            const data = await response.json();
+            if (data.candidates && data.candidates[0].content && data.candidates[0].content.parts[0].text) {
+                let jsonStr = data.candidates[0].content.parts[0].text;
+                jsonStr = jsonStr.replace(/```json/g, '').replace(/```/g, '').trim();
+                return JSON.parse(jsonStr);
+            } else {
+                throw new Error("לא התקבל מבנה נתונים תקין מהבינה המלאכותית.");
+            }
+        };
+
+        // --- API CALL: Suggest Alternative/Extension Activity (Gemini 2.5 Flash) ---
+        const generateExtensionActivity = async (topic, currentPlan) => {
+            const prompt = `אתה מומחה פדגוגי לגיל הרך. עבור הפעילות בנושא "${topic}", שנוצרה עם הכרטיסיות הבאות: ${JSON.stringify(currentPlan.cards)}. 
+הצע פעילות נוספת (שונה מהפעילות הבסיסית והמתקדמת שכבר הצעת) המשלבת את רובוט הבלו-בוט על גבי המשטח. 
+כתוב הצעה קצרה, מלהיבה וברורה לגננת (עד 3 משפטים בעברית קולחת).`;
+
+            const payload = {
+                contents: [{ parts: [{ text: prompt }] }]
+            };
+
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+            const response = await fetchWithRetry(apiUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            const data = await response.json();
+            if (data.candidates?.[0]?.content?.parts?.[0]?.text) {
+                return data.candidates[0].content.parts[0].text.trim();
+            } else {
+                throw new Error("לא התקבל רעיון חלופי מהבינה המלאכותית.");
+            }
+        };
+
+        // --- API CALL: Generate Single Image (Imagen 4) ---
+        const generateSingleImage = async (prompt) => {
+            const payload = {
+                instances: [{ prompt: prompt }],
+                parameters: { sampleCount: 1 }
+            };
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict?key=${apiKey}`;
+            const response = await fetchWithRetry(apiUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            const data = await response.json();
+            if (data.predictions && data.predictions.length > 0 && data.predictions[0].bytesBase64Encoded) {
+                return `data:image/png;base64,${data.predictions[0].bytesBase64Encoded}`;
+            } else {
+                throw new Error("שגיאה ביצירת התמונה.");
+            }
+        };
+
+        // --- API CALL: Text-To-Speech (Gemini 2.5 TTS) ---
+        const speakText = async (text) => {
+            const cleanText = text.replace(/[^א-ת0-9\s.,?!:;]/g, '');
+            const payload = {
+                contents: [{ parts: [{ text: `הקרא בעברית בקול רהוט, שמח וחם המתאים לילדי גן קטנים: ${cleanText}` }] }],
+                generationConfig: {
+                    responseModalities: ["AUDIO"],
+                    speechConfig: {
+                        voiceConfig: {
+                            prebuiltVoiceConfig: {
+                                voiceName: "Leda"
+                            }
+                        }
+                    }
+                },
+                model: "gemini-2.5-flash-preview-tts"
+            };
+
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${apiKey}`;
+            const response = await fetchWithRetry(apiUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            const data = await response.json();
+            if (data.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data) {
+                const base64Audio = data.candidates[0].content.parts[0].inlineData.data;
+                const mimeType = data.candidates[0].content.parts[0].inlineData.mimeType || "audio/L16;rate=24000";
+                
+                let sampleRate = 24000;
+                const rateMatch = mimeType.match(/rate=(\d+)/);
+                if (rateMatch && rateMatch[1]) sampleRate = parseInt(rateMatch[1], 10);
+
+                const binaryString = atob(base64Audio);
+                const bytes = new Uint8Array(binaryString.length);
+                for (let i = 0; i < binaryString.length; i++) {
+                    bytes[i] = binaryString.charCodeAt(i);
+                }
+
+                const wavBuffer = buildWavHeader(bytes, sampleRate);
+                const blob = new Blob([wavBuffer], { type: 'audio/wav' });
+                return URL.createObjectURL(blob);
+            } else {
+                throw new Error("שגיאה בהפקת השמע.");
+            }
+        };
+
+        const buildWavHeader = (pcmBytes, sampleRate) => {
+            const buffer = new ArrayBuffer(44 + pcmBytes.length);
+            const view = new DataView(buffer);
+            const writeString = (view, offset, string) => {
+                for (let i = 0; i < string.length; i++) view.setUint8(offset + i, string.charCodeAt(i));
+            };
+            writeString(view, 0, 'RIFF');
+            view.setUint32(4, 36 + pcmBytes.length, true);
+            writeString(view, 8, 'WAVE');
+            writeString(view, 12, 'fmt ');
+            view.setUint32(16, 16, true);
+            view.setUint16(20, 1, true);
+            view.setUint16(22, 1, true);
+            view.setUint32(24, sampleRate, true);
+            view.setUint32(28, sampleRate * 2, true);
+            view.setUint16(32, 2, true);
+            view.setUint16(34, 16, true);
+            writeString(view, 36, 'data');
+            view.setUint32(40, pcmBytes.length, true);
+            for (let i = 0; i < pcmBytes.length; i++) view.setUint8(44 + i, pcmBytes[i]);
+            return buffer;
+        };
+
+        // --- Main Component ---
+        const App = () => {
+            const [topic, setTopic] = useState('');
+            const [description, setDescription] = useState('');
+            const [loadingState, setLoadingState] = useState({ isLoading: false, message: '' });
+            const [activity, setActivity] = useState(null);
+            const [images, setImages] = useState({});
+            const [error, setError] = useState('');
+            const [toastMessage, setToastMessage] = useState(null);
+            const [selectedCell, setSelectedCell] = useState(null);
+            
+            // Suggested extension state
+            const [extensionActivity, setExtensionActivity] = useState('');
+            const [loadingExtension, setLoadingExtension] = useState(false);
+
+            // Card editor states
+            const [editName, setEditName] = useState('');
+            const [editPrompt, setEditPrompt] = useState('');
+            const [isSavingCard, setIsSavingCard] = useState(false);
+
+            // Header state indicators for logos
+            const [logoLoadError, setLogoLoadError] = useState(false);
+            const [botLoadError, setBotLoadError] = useState(false);
+
+            // Audio Speech
+            const [isPlayingAudio, setIsPlayingAudio] = useState(false);
+            const audioRef = useRef(null);
+
+            const showToast = (msg) => {
+                setToastMessage(msg);
+                setTimeout(() => setToastMessage(null), 3000);
+            };
+
+            // Main Generator Trigger
+            const handleGenerate = async (e) => {
+                if (e && e.preventDefault) e.preventDefault();
+                if (!topic.trim()) return;
+
+                setLoadingState({ isLoading: true, message: 'מכין מטרות לימודיות וממקם כרטיסיות...' });
+                setError('');
+                setActivity(null);
+                setImages({});
+                setSelectedCell(null);
+                setExtensionActivity('');
+
+                try {
+                    const plan = await generateActivityPlan(topic, description);
+                    setActivity(plan);
+
+                    setLoadingState({ isLoading: true, message: 'מייצר כרטיסיות מותאמות לילדים...' });
+                    const newImages = {};
+
+                    const imagePromises = plan.cards.map(async (card) => {
+                        try {
+                            const img = await generateSingleImage(card.englishPrompt);
+                            newImages[card.id] = img;
+                        } catch (e) {
+                            newImages[card.id] = `https://placehold.co/150x150/fde047/1e293b?text=${encodeURIComponent(card.hebrewName)}`;
+                        }
+                    });
+
+                    await Promise.all(imagePromises);
+                    setImages(newImages);
+                    setLoadingState({ isLoading: false, message: '' });
+                    playBeep('success');
+                    showToast('הפעילות החדשה מוכנה! בואו נתכנת ונדפיס! 🐞🎨');
+                } catch (err) {
+                    console.error(err);
+                    setError(err.message || 'חלה שגיאה ביצירה. נסי נושא אחר או קצר יותר.');
+                    setLoadingState({ isLoading: false, message: '' });
+                }
+            };
+
+            // Suggest Another Activity
+            const handleSuggestExtension = async () => {
+                if (!activity) return;
+                setLoadingExtension(true);
+                try {
+                    const extraPlan = await generateExtensionActivity(topic, activity);
+                    setExtensionActivity(extraPlan);
+                    showToast('רעיון לפעילות נוספת מוכן! 💡');
+                } catch (err) {
+                    console.error(err);
+                    showToast('שגיאה ביצירת פעילות נוספת.');
+                } finally {
+                    setLoadingExtension(false);
+                }
+            };
+
+            // Read aloud activity details for the children
+            const handleSpeech = async () => {
+                if (isPlayingAudio) {
+                    if (audioRef.current) {
+                        audioRef.current.pause();
+                        setIsPlayingAudio(false);
+                    }
+                    return;
+                }
+                if (!activity) return;
+
+                setLoadingState({ isLoading: true, message: 'מפיק דיבור חם לגננת ולילדים...' });
+                try {
+                    const speechText = `ילדים חמודים, הגענו למשחק: ${activity.activityTitle}. מטרת המשחק היא: ${activity.goal}. גננת, להלן הוראות הפעילות הבסיסית: ${activity.basicInstructions}. והוראות הפעילות המתקדמת עם הרובוט: ${activity.advancedInstructions}. ופעילות נוספת במרחב הגן עם הכרטיסיות: ${activity.spaceActivityInstructions}`;
+                    const audioUrl = await speakText(speechText);
+                    const audio = new Audio(audioUrl);
+                    audioRef.current = audio;
+                    setIsPlayingAudio(true);
+                    setLoadingState({ isLoading: false, message: '' });
+                    audio.play();
+                    audio.onended = () => setIsPlayingAudio(false);
+                } catch (e) {
+                    console.error(e);
+                    showToast('שגיאה בהפקת השמע החי.');
+                    setLoadingState({ isLoading: false, message: '' });
+                }
+            };
+
+            const handleCardClick = (card) => {
+                playBeep('click');
+                setSelectedCell(card);
+                setEditName(card.hebrewName);
+                setEditPrompt(card.englishPrompt);
+            };
+
+            const saveCardChanges = async () => {
+                if (!activity || !selectedCell) return;
+                setIsSavingCard(true);
+                try {
+                    const promptChanged = editPrompt !== selectedCell.englishPrompt;
+                    let newUrl = images[selectedCell.id];
+
+                    if (promptChanged) {
+                        newUrl = await generateSingleImage(editPrompt);
+                    }
+
+                    const updatedCards = activity.cards.map(c => {
+                        if (c.id === selectedCell.id) {
+                            return { ...c, hebrewName: editName, englishPrompt: editPrompt };
+                        }
+                        return c;
+                    });
+
+                    setActivity({ ...activity, cards: updatedCards });
+                    setImages({ ...images, [selectedCell.id]: newUrl });
+                    setSelectedCell(null);
+                    showToast('הכרטיסייה עודקנה בהצלחה!');
+                } catch (err) {
+                    console.error(err);
+                    showToast('שגיאה בעדכון התמונה.');
+                } finally {
+                    setIsSavingCard(false);
+                }
+            };
+
+            // Improved print layout - One Card per page, neatly centered on A4 paper
+            const handlePrint = () => {
+                if (!activity) return;
+                const pWindow = window.open('', '_blank');
+                pWindow.document.write(`
+                    <!DOCTYPE html>
+                    <html lang="he" dir="rtl">
+                    <head>
+                        <meta charset="UTF-8">
+                        <title>הדפסה - ${activity.activityTitle}</title>
+                        <link href="https://fonts.googleapis.com/css2?family=Assistant:wght@600;800&display=swap" rel="stylesheet">
+                        <style>
+                            @page {
+                                size: A4 portrait;
+                                margin: 0;
+                            }
+                            html, body {
+                                margin: 0;
+                                padding: 0;
+                                background: #ffffff;
+                                font-family: 'Assistant', sans-serif;
+                                text-align: center;
+                                color: #1e293b;
+                                -webkit-print-color-adjust: exact;
+                                print-color-adjust: exact;
+                            }
+                            .cards-container {
+                                display: block;
+                                width: 100%;
+                            }
+                            .card {
+                                border: 5px dashed #0d9488;
+                                border-radius: 24px;
+                                width: 14.8cm;
+                                height: 14.8cm;
+                                display: flex;
+                                flex-direction: column;
+                                align-items: center;
+                                justify-content: space-between;
+                                padding: 30px;
+                                box-sizing: border-box;
+                                /* Center perfectly on A4 page */
+                                margin: 3.5cm auto; 
+                                page-break-inside: avoid;
+                                page-break-after: always;
+                                break-after: page;
+                                background: #ffffff;
+                            }
+                            /* Remove page break from the absolute last card to prevent blank printed pages */
+                            .card:last-child {
+                                page-break-after: avoid;
+                                break-after: avoid;
+                            }
+                            .card img { 
+                                max-width: 85%; 
+                                max-height: 70%; 
+                                object-fit: contain; 
+                                border-radius: 12px;
+                            }
+                            .card h2 { 
+                                font-size: 38px; 
+                                margin: 0; 
+                                color: #111827; 
+                                border-top: 3px solid #f1f5f9; 
+                                width: 100%; 
+                                padding-top: 15px; 
+                                font-weight: 800;
+                            }
+                            
+                            /* Interactive instruction block (hidden when printing) */
+                            .print-preview-header {
+                                background: #f0fdfa;
+                                border-bottom: 2px solid #ccfbf1;
+                                padding: 25px;
+                                margin-bottom: 30px;
+                            }
+                            .print-preview-header h1 { margin: 0 0 5px 0; color: #0d9488; font-size: 24px; }
+                            .print-preview-header p { margin: 0; font-size: 14px; color: #475569; }
+
+                            @media print {
+                                .print-preview-header {
+                                    display: none !important;
+                                }
+                                .card {
+                                    /* Keep accurate centering on print layout */
+                                    margin: 3.5cm auto !important;
+                                }
+                            }
+                        </style>
+                    </head>
+                    <body>
+                        <div class="print-preview-header">
+                            <h1>מצב הדפסת כרטיסיות לפעילות: ${activity.activityTitle}</h1>
+                            <p>כל כרטיסייה מותאמת באופן מדויק לגודל 15x15 ס"מ ותודפס אוטומטית בדף נפרד. גזרו את הכרטיסיות לאורך מסגרת הקו המקווקו.</p>
+                        </div>
+                        <div class="cards-container">
+                            ${activity.cards.map(c => `
+                                <div class="card">
+                                    <img src="${images[c.id] || ''}" alt="${c.hebrewName}" />
+                                    <h2>${c.hebrewName}</h2>
+                                </div>
+                            `).join('')}
+                        </div>
+                        <script>
+                            setTimeout(() => { window.print(); }, 1200);
+                        <\/script>
+                    </body>
+                    </html>
+                `);
+                pWindow.document.close();
+            };
+
+            // Copy team message (WhatsApp clipboard)
+            const copyToClipboard = () => {
+                if (!activity) return;
+                const textToCopy = `
+💡 מערך פעילות לרובוט Blue-Bot בגן!
+🎈 שם הפעילות: ${activity.activityTitle}
+🧩 סוג: ${activity.activityType}
+🎯 מטרת המשחק: ${activity.goal}
+
+📖 הוראות לפעילות בסיסית: 
+${activity.basicInstructions}
+
+🌟 הוראות לפעילות מתקדמת (פעילות עם הרובוט):
+${activity.advancedInstructions}
+
+⚡ פעילות נוספת במרחב עם הכרטיסיות:
+${activity.spaceActivityInstructions}
+
+הופק באהבה באמצעות "בלו-בוט פלוס" 🐞✨
+                `.trim();
+
+                const textArea = document.createElement("textarea");
+                textArea.value = textToCopy;
+                document.body.appendChild(textArea);
+                textArea.select();
+                try {
+                    document.execCommand('copy');
+                    showToast("תוכן המערך הועתק! ניתן להדביק ישירות בוואטסאפ של צוות הגן 📱");
+                } catch (err) {
+                    console.error('Failed to copy', err);
+                }
+                document.body.removeChild(textArea);
+            };
+
+            const handleDragStart = (e, cardId) => {
+                e.dataTransfer.setData("cardId", cardId);
+            };
+
+            const handleDropOnCell = (e, targetRow, targetCol) => {
+                e.preventDefault();
+                const cardId = e.dataTransfer.setData("cardId");
+                if (!cardId || !activity) return;
+
+                const updatedCards = activity.cards.map(c => {
+                    if (c.id === cardId) {
+                        return { ...c, row: targetRow, col: targetCol };
+                    }
+                    return c;
+                });
+
+                setActivity({ ...activity, cards: updatedCards });
+                showToast('מיקום הכרטיסייה עודכן!');
+            };
+
+            return (
+                <div className="min-h-screen pb-16 relative">
+                    
+                    {/* Magical Playful Header */}
+                    <header className="bg-gradient-to-r from-teal-500 via-emerald-400 to-cyan-500 text-slate-900 py-6 px-4 shadow-md rounded-b-[2.5rem] no-print">
+                        <div className="max-w-4xl mx-auto flex items-center justify-between gap-4">
+                            
+                            {/* App Identity (Right align in RTL) */}
+                            <div className="flex items-center gap-3">
+                                {botLoadError ? (
+                                    <span className="text-4xl animate-bounce select-none">🐞</span>
+                                ) : (
+                                    <img 
+                                        src={BLUE_BOT_IMAGE_URL} 
+                                        alt="רובוט בלו-בוט" 
+                                        className="w-14 h-14 object-contain animate-bounce select-none"
+                                        onError={() => setBotLoadError(true)}
+                                    />
+                                )}
+                                <div>
+                                    <h1 className="text-3xl font-extrabold playful-title tracking-wide text-slate-950">בלו-בוט פלוס 🌈</h1>
+                                    <p className="text-slate-800 text-xs font-semibold">מחולל פעילויות לשילוב הרובוט בפעילויות הגן</p>
+                                </div>
+                            </div>
+
+                            {/* Haifa Matya Logo Container (Left align in RTL) */}
+                            <div className="flex items-center gap-2">
+                                {!logoLoadError ? (
+                                    <div className="bg-white/95 p-1 rounded-2xl shadow-sm border border-teal-200">
+                                        <img 
+                                            src={MATYA_HAIFA_LOGO_URL} 
+                                            alt="לוגו מתיא חיפה" 
+                                            className="h-12 w-auto object-contain rounded-xl"
+                                            onError={() => setLogoLoadError(true)}
+                                        />
+                                    </div>
+                                ) : (
+                                    <MatyaHaifaFallback />
+                                )}
+                            </div>
+
+                        </div>
+                    </header>
+
+                    {/* Toast Notification */}
+                    {toastMessage && (
+                        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 bg-teal-600 text-white font-extrabold py-3.5 px-6 rounded-full shadow-2xl flex items-center gap-2 animate-bounce border-2 border-white">
+                            <span>✨</span>
+                            <span>{toastMessage}</span>
+                        </div>
+                    )}
+
+                    <main className="max-w-6xl mx-auto px-4 mt-8 grid lg:grid-cols-12 gap-8">
+                        
+                        {/* Control Side (Spans 5) */}
+                        <div className="lg:col-span-5 space-y-6 no-print">
+                            
+                            {/* Generator Fields */}
+                            <div className="bg-white p-6 rounded-3xl shadow-md border border-slate-100 space-y-4">
+                                <h2 className="text-xl font-black text-slate-800 flex items-center gap-2 playful-title">
+                                    <span>🤖</span> פעילות עם הרובוט
+                                </h2>
+                                <form onSubmit={handleGenerate} className="space-y-4">
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-500 mb-1">נושא הפעילות המרכזי:</label>
+                                        <input 
+                                            type="text"
+                                            value={topic}
+                                            onChange={(e) => setTopic(e.target.value)}
+                                            placeholder="למשל: סמלי החג, פירות החורף, אותיות..."
+                                            className="w-full p-3 border-2 border-teal-100 rounded-2xl focus:border-teal-500 outline-none text-base bg-white font-semibold"
+                                            disabled={loadingState.isLoading}
+                                            required
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-500 mb-1">אוצר מילים ממוקד או מטרה פדגוגית ספציפית:</label>
+                                        <textarea
+                                            value={description}
+                                            onChange={(e) => setDescription(e.target.value)}
+                                            placeholder="למשל: אוצר מילים כמו 'פרפר, זחל, פריחה', חיזוק מוטוריקה עדינה או זיהוי צבעים..."
+                                            className="w-full p-3 border-2 border-teal-100 rounded-2xl focus:border-teal-500 outline-none text-sm bg-white resize-none"
+                                            rows="3"
+                                            disabled={loadingState.isLoading}
+                                        />
+                                    </div>
+
+                                    <button
+                                        type="submit"
+                                        disabled={loadingState.isLoading}
+                                        className="w-full bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-700 hover:to-emerald-700 text-white font-extrabold py-3.5 rounded-2xl shadow-lg transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2 text-base"
+                                    >
+                                        {loadingState.isLoading ? 'מכין מערך פעילות...' : 'הצע פעילות חוויתית ✨'}
+                                    </button>
+                                </form>
+                            </div>
+
+                        </div>
+
+                        {/* Visual Playground Side (Spans 7) */}
+                        <div className="lg:col-span-7 space-y-6">
+                            
+                            {/* Loading State Overlay */}
+                            {loadingState.isLoading && (
+                                <div className="glass-panel p-12 rounded-3xl shadow-xl flex flex-col items-center justify-center text-center">
+                                    <div className="loader-ring mb-6">
+                                        <div></div><div></div><div></div><div></div>
+                                    </div>
+                                    <h3 className="text-lg font-bold text-teal-800 animate-pulse">{loadingState.message}</h3>
+                                    <p className="text-xs text-slate-400 mt-2">רגע אחד... מחברים קווים ודמיון פדגוגי</p>
+                                </div>
+                            )}
+
+                            {/* Error State */}
+                            {error && (
+                                <div className="bg-red-50 text-red-700 p-5 rounded-3xl border border-red-200 text-center shadow-sm">
+                                    <span className="text-3xl block mb-2">⚠️</span>
+                                    <p className="font-bold text-base">{error}</p>
+                                </div>
+                            )}
+
+                            {/* Core Activity Output */}
+                            {activity && !loadingState.isLoading && (
+                                <div className="space-y-6">
+                                    
+                                    {/* Playful Plan Card */}
+                                    <div className="bg-white p-6 rounded-3xl shadow-md border border-slate-100 relative overflow-hidden">
+                                        <div className="absolute top-0 right-0 w-2.5 h-full bg-emerald-400"></div>
+                                        
+                                        <div className="flex justify-between items-start gap-4">
+                                            <div>
+                                                <span className="text-xs font-extrabold text-teal-700 bg-teal-50 px-3 py-1 rounded-full">{activity.activityType}</span>
+                                                <h2 className="text-2xl font-black text-slate-900 mt-2 playful-title">{activity.activityTitle}</h2>
+                                            </div>
+
+                                            <div className="flex gap-2 no-print">
+                                                <button
+                                                    onClick={handleSpeech}
+                                                    title="שמע הפעילות לגן"
+                                                    className={`p-3 rounded-full transition-all ${isPlayingAudio ? 'bg-red-100 text-red-600 wave-pulse' : 'bg-teal-100 hover:bg-teal-200 text-teal-700'}`}
+                                                >
+                                                    🔊
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        {/* Game Goal */}
+                                        <div className="mt-4 bg-slate-50 p-4 rounded-2xl border border-slate-100 text-sm">
+                                            <h4 className="font-black text-slate-500 text-xs">מטרת המשחק:</h4>
+                                            <p className="font-semibold text-slate-800 mt-0.5">{activity.goal}</p>
+                                        </div>
+
+                                        {/* Basic Level Instructions */}
+                                        <div className="mt-4 text-sm">
+                                            <h4 className="font-black text-teal-600 text-xs">הוראות לפעילות בסיסית:</h4>
+                                            <p className="text-slate-900 text-base font-extrabold leading-relaxed mt-1 bg-teal-50/50 p-4 rounded-2xl border border-teal-100">
+                                                {activity.basicInstructions}
+                                            </p>
+                                        </div>
+
+                                        {/* Advanced Level Instructions - With Robot */}
+                                        <div className="mt-4 text-sm">
+                                            <h4 className="font-black text-indigo-600 text-xs">הוראות לפעילות מתקדמת (פעילות עם הרובוט):</h4>
+                                            <p className="text-slate-900 text-base font-extrabold leading-relaxed mt-1 bg-indigo-50/50 p-4 rounded-2xl border border-indigo-100">
+                                                {activity.advancedInstructions}
+                                            </p>
+                                        </div>
+
+                                        {/* Space Activity Level Instructions (Out of board physical activity) */}
+                                        <div className="mt-4 text-sm">
+                                            <h4 className="font-black text-amber-600 text-xs">פעילות נוספת במרחב עם הכרטיסיות:</h4>
+                                            <p className="text-slate-900 text-base font-extrabold leading-relaxed mt-1 bg-amber-50/50 p-4 rounded-2xl border border-amber-100">
+                                                {activity.spaceActivityInstructions}
+                                            </p>
+                                        </div>
+
+                                        {/* Suggest Another Activity Option (Alternative/Extension Activity with Robot) */}
+                                        <div className="mt-5 pt-4 border-t border-slate-100 no-print">
+                                            <button
+                                                onClick={handleSuggestExtension}
+                                                disabled={loadingExtension}
+                                                className="w-full bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-extrabold py-3 px-4 rounded-2xl transition-all border border-emerald-200 flex items-center justify-center gap-2 text-sm"
+                                            >
+                                                {loadingExtension ? 'מייצר רעיון...' : '💡 הצע פעילות נוספת עם הרובוט'}
+                                            </button>
+                                            
+                                            {extensionActivity && (
+                                                <div className="mt-3 bg-emerald-50/50 text-indigo-950 p-4 rounded-2xl border border-emerald-100/60 text-sm leading-relaxed font-semibold">
+                                                    <span className="block text-xs font-black text-emerald-600 mb-1">🎮 רעיון נוסף למשחק:</span>
+                                                    {extensionActivity}
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* Playful Interactive Grid Map */}
+                                    <div className="glass-panel p-6 rounded-3xl shadow-lg relative">
+                                        <h3 className="text-base font-black text-slate-800 mb-2 no-print">משטח פעילות בלו-בוט אינטראקטיבי</h3>
+                                        
+                                        {/* Grid Container */}
+                                        <div className="grid-board relative">
+                                            
+                                            {/* Static Bot Start Marker */}
+                                            <div 
+                                                className="absolute z-30 flex items-center justify-center pointer-events-none"
+                                                style={{
+                                                    top: `${(activity.botStartPos.row / 6) * 100}%`,
+                                                    left: `${(activity.botStartPos.col / 6) * 100}%`,
+                                                    width: "15%",
+                                                    height: "15%"
+                                                }}
+                                            >
+                                                <img 
+                                                    src={BLUE_BOT_IMAGE_URL} 
+                                                    alt="בלו-בוט התחלה" 
+                                                    className="static-bot-marker"
+                                                    onError={(e) => { e.target.style.display = 'none'; }}
+                                                />
+                                            </div>
+
+                                            {/* Map Tiles */}
+                                            {Array.from({ length: 36 }).map((_, idx) => {
+                                                const row = Math.floor(idx / 6);
+                                                const col = idx % 6;
+
+                                                const card = activity.cards.find(c => c.row === row && c.col === col);
+                                                const isBotStartCell = activity.botStartPos.row === row && activity.botStartPos.col === col;
+
+                                                return (
+                                                    <div
+                                                        key={idx}
+                                                        className="grid-cell border border-slate-200/40"
+                                                        onDragOver={(e) => e.preventDefault()}
+                                                        onDrop={(e) => handleDropOnCell(e, row, col)}
+                                                    >
+                                                        {card ? (
+                                                            <div
+                                                                draggable
+                                                                onDragStart={(e) => handleDragStart(e, card.id)}
+                                                                onClick={() => handleCardClick(card)}
+                                                                className="w-full h-full flex flex-col items-center justify-center cursor-pointer"
+                                                                title="גררי לשינוי מיקום או לחצי לעריכה"
+                                                            >
+                                                                {images[card.id] ? (
+                                                                    <img 
+                                                                        src={images[card.id]} 
+                                                                        alt={card.hebrewName}
+                                                                        className="card-image pointer-events-none drop-shadow" 
+                                                                    />
+                                                                ) : (
+                                                                    <div className="w-6 h-6 border-2 border-dashed border-teal-300 rounded-full animate-pulse mb-1"></div>
+                                                                )}
+                                                                <span className="card-title pointer-events-none">{card.hebrewName}</span>
+                                                            </div>
+                                                        ) : null}
+
+                                                        {isBotStartCell && !card && (
+                                                            <div className="flex flex-col items-center justify-center opacity-40 pointer-events-none">
+                                                                <span className="text-xl">🏁</span>
+                                                                <span className="text-[0.55rem] font-bold text-slate-500">נקודת התחלה</span>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+
+                                        {/* Board Info Guides */}
+                                        <div className="mt-4 flex flex-wrap items-center justify-center gap-4 text-xs text-slate-500 bg-white/50 p-2.5 rounded-2xl no-print border-b border-slate-200/50 pb-4">
+                                            <div className="flex items-center gap-1">
+                                                <img src={BLUE_BOT_IMAGE_URL} alt="בלו-בוט" className="w-5 h-5 object-contain" />
+                                                <span>רובוט בלו-בוט (בנקודת ההתחלה)</span>
+                                            </div>
+                                            <div className="flex items-center gap-1">
+                                                <div className="w-3 h-3 bg-white border border-teal-300 rounded"></div>
+                                                <span>כרטיסיית ניווט (גררי או לחצי)</span>
+                                            </div>
+                                        </div>
+
+                                        {/* Action buttons - Under the Grid Map */}
+                                        <div className="flex flex-wrap gap-3 mt-4 no-print">
+                                            <button 
+                                                onClick={handlePrint}
+                                                className="flex-1 bg-gradient-to-r from-orange-400 to-amber-500 hover:from-orange-500 hover:to-amber-600 text-white font-extrabold py-3.5 px-4 rounded-2xl transition-all shadow-md flex items-center justify-center gap-2 text-sm"
+                                            >
+                                                🖨️ הדפיסי כרטיסיות
+                                            </button>
+                                            <button 
+                                                onClick={copyToClipboard}
+                                                className="flex-1 bg-gradient-to-r from-teal-500 to-cyan-500 hover:from-teal-600 hover:to-cyan-600 text-white font-extrabold py-3.5 px-4 rounded-2xl transition-all shadow-md flex items-center justify-center gap-2 text-sm"
+                                            >
+                                                📱 העתיקי פעילות
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Card Details/Edit Modal */}
+                            {selectedCell && (
+                                <div className="glass-panel p-6 rounded-3xl shadow-xl border-2 border-emerald-400 relative transition-all animate-fade-in no-print">
+                                    <button
+                                        onClick={() => setSelectedCell(null)}
+                                        className="absolute top-4 left-4 text-slate-400 hover:text-slate-600 font-bold"
+                                    >
+                                        ✕
+                                    </button>
+                                    <h3 className="text-sm font-black text-emerald-800 mb-3 flex items-center gap-1.5">
+                                        <span>⚙️</span> עריכת כרטיסיית: {selectedCell.hebrewName}
+                                    </h3>
+
+                                    <div className="grid md:grid-cols-2 gap-4">
+                                        <div className="space-y-3">
+                                            <div>
+                                                <label className="block text-xs font-bold text-slate-500 mb-1">שם הכרטיסייה בעברית:</label>
+                                                <input 
+                                                    type="text"
+                                                    value={editName}
+                                                    onChange={(e) => setEditName(e.target.value)}
+                                                    className="w-full p-2 border border-slate-200 rounded-xl text-xs bg-white font-bold"
+                                                    disabled={isSavingCard}
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs font-bold text-slate-500 mb-1">פרומפט תמונה (אנגלית):</label>
+                                                <textarea 
+                                                    value={editPrompt}
+                                                    onChange={(e) => setEditPrompt(e.target.value)}
+                                                    rows="2"
+                                                    className="w-full p-2 border border-slate-200 rounded-xl text-[10px] bg-white resize-none"
+                                                    disabled={isSavingCard}
+                                                />
+                                            </div>
+                                        </div>
+
+                                        <div className="flex flex-col items-center justify-between p-3 bg-slate-50 rounded-2xl border border-slate-100">
+                                            <span className="text-[9px] font-bold text-slate-400">תמונה נוכחית:</span>
+                                            {images[selectedCell.id] ? (
+                                                <img 
+                                                    src={images[selectedCell.id]} 
+                                                    alt="תצוגה" 
+                                                    className="w-20 h-20 object-contain rounded-xl drop-shadow-sm" 
+                                                />
+                                            ) : null}
+
+                                            <div className="flex gap-1.5 w-full mt-2">
+                                                <button
+                                                    onClick={saveCardChanges}
+                                                    disabled={isSavingCard}
+                                                    className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-1.5 rounded-lg text-[11px] transition-all disabled:opacity-50"
+                                                >
+                                                    {isSavingCard ? 'מעדכן...' : 'שמור כרטיס'}
+                                                </button>
+                                                <button
+                                                    onClick={() => setSelectedCell(null)}
+                                                    className="bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold px-2.5 py-1.5 rounded-lg text-[11px] transition-all"
+                                                >
+                                                    ביטול
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                        </div>
+                    </main>
+
+                    {/* Footer */}
+                    <footer className="max-w-4xl mx-auto text-center mt-12 text-slate-400 text-xs no-print">
+                        בלו-בוט פלוס מיועד לגננות ומחנכי חינוך מיוחד המביאים קסם ללמידה. ✨🎈
+                    </footer>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
