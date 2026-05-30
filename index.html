@@ -194,102 +194,6 @@
             }
         };
 
-        const generateActivityPlan = async (topic, description) => {
-            let prompt = `אתה מדריך ומומחה פדגוגי בכיר לגיל הרך וחינוך מיוחד. הגננת ביקשה ליצור פעילות לרובוט Blue-Bot (חיפושית הקידוד) בנושא: "${topic}".\n`;
-            if (description && description.trim() !== '') {
-                prompt += `אוצר מילים מבוקש או מטרות פדגוגיות: "${description}".\n`;
-            }
-            prompt += `
-משטח הבלובוט הוא גריד של 6x6 משבצות.
-עליך לייצר מערך קצר, פשוט, צבעוני ומתוק שכולל כותרת מזמינה לילדים, סוג משחק, מטרה פדגוגית ברורה, הנחיות לפעילות בסיסית, הנחיות לפעילות מתקדמת (המתמקדת ברובוט), והוראות לפעילות תנועתית/חווייתית במרחב הגן העושה שימוש בכרטיסיות המודפסות מחוץ למשטח הבלו-בוט (ללא הרובוט).
-עליך ליצור בדיוק 5 כרטיסיות מגוונות המתאימות לנושא.
-
-החזר פורמט JSON בלבד, ללא מרקאפ או תגיות.
-`;
-
-            const payload = {
-                contents: [{ parts: [{ text: prompt }] }],
-                generationConfig: {
-                    responseMimeType: "application/json",
-                    responseSchema: {
-                        type: "OBJECT",
-                        properties: {
-                            activityTitle: { type: "STRING" },
-                            activityType: { type: "STRING" },
-                            goal: { type: "STRING" },
-                            basicInstructions: { type: "STRING" },
-                            advancedInstructions: { type: "STRING" },
-                            spaceActivityInstructions: { type: "STRING" },
-                            botStartPos: {
-                                type: "OBJECT",
-                                properties: { row: { type: "INTEGER" }, col: { type: "INTEGER" } },
-                                required: ["row", "col"]
-                            },
-                            cards: {
-                                type: "ARRAY",
-                                items: {
-                                    type: "OBJECT",
-                                    properties: {
-                                        id: { type: "STRING" },
-                                        hebrewName: { type: "STRING" },
-                                        englishPrompt: { type: "STRING" },
-                                        row: { type: "INTEGER" },
-                                        col: { type: "INTEGER" }
-                                    },
-                                    required: ["id", "hebrewName", "englishPrompt", "row", "col"]
-                                }
-                            }
-                        },
-                        required: ["activityTitle", "activityType", "goal", "basicInstructions", "advancedInstructions", "spaceActivityInstructions", "botStartPos", "cards"]
-                    }
-                }
-            };
-
-            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
-            const response = await fetchWithRetry(apiUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
-
-            const data = await response.json();
-            if (data.candidates?.[0]?.content?.parts?.[0]?.text) {
-                return JSON.parse(data.candidates[0].content.parts[0].text.trim());
-            }
-            throw new Error("לא התקבל מבנה נתונים תקין מהבינה המלאכותית.");
-        };
-
-        const generateExtensionActivity = async (topic, currentPlan) => {
-            const prompt = `עבור הפעילות בנושא "${topic}", שנוצרה עם הכרטיסיות הבאות: ${JSON.stringify(currentPlan.cards)}. הצע פעילות נוספת עם רובוט הבלו-בוט על גבי המשטח. כתוב הצעה קצרה ומלהיבה לגננת (עד 3 משפטים בעברית).`;
-            const payload = { contents: [{ parts: [{ text: prompt }] }] };
-            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
-            const response = await fetchWithRetry(apiUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
-            const data = await response.json();
-            return data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "לא הצלחנו לייצר פעילות נוספת כרגע.";
-        };
-
-        const generateSingleImage = async (prompt) => {
-            const payload = {
-                instances: { prompt: prompt + ", flat vector kawaii style illustration, happy expression, vibrant colors, white background, educational children style, isolated, vector graphic" },
-                parameters: { sampleCount: 1 }
-            };
-            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict?key=${apiKey}`;
-            const response = await fetchWithRetry(apiUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
-            const data = await response.json();
-            if (data.predictions?.[0]?.bytesBase64Encoded) {
-                return `data:image/png;base64,${data.predictions[0].bytesBase64Encoded}`;
-            }
-            throw new Error("שגיאה ביצירת התמונה.");
-        };
-
         const App = () => {
             const [topic, setTopic] = useState('');
             const [description, setDescription] = useState('');
@@ -298,15 +202,136 @@
             const [images, setImages] = useState({});
             const [error, setError] = useState('');
             const [toastMessage, setToastMessage] = useState(null);
-            const [selectedCell, setSelectedCell] = useState(null);
             const [extensionActivity, setExtensionActivity] = useState('');
             const [loadingExtension, setLoadingExtension] = useState(false);
             const [logoLoadError, setLogoLoadError] = useState(false);
             const [botLoadError, setBotLoadError] = useState(false);
+            
+            // מנגנון ניהול מפתח ה-API
+            const [customApiKey, setCustomApiKey] = useState(() => {
+                return localStorage.getItem('bluebot_user_api_key') || '';
+            });
+            const [showSettings, setShowSettings] = useState(false);
+
+            // בחירת המפתח הפעיל (מפתח מוזרק או מפתח שהוזן ידנית)
+            const getActiveApiKey = () => {
+                return apiKey || customApiKey;
+            };
+
+            const saveCustomApiKey = (key) => {
+                const cleanKey = key.trim();
+                setCustomApiKey(cleanKey);
+                localStorage.setItem('bluebot_user_api_key', cleanKey);
+                setShowSettings(false);
+                showToast('מפתח ה-API נשמר בהצלחה! 🔑');
+            };
 
             const showToast = (msg) => {
                 setToastMessage(msg);
                 setTimeout(() => setToastMessage(null), 3000);
+            };
+
+            const generateActivityPlan = async (topic, description) => {
+                const activeKey = getActiveApiKey();
+                if (!activeKey) {
+                    throw new Error("API_KEY_MISSING");
+                }
+
+                let prompt = `אתה מדריך ומומחה פדגוגי בכיר לגיל הרך וחינוך מיוחד. הגננת ביקשה ליצור פעילות לרובוט Blue-Bot (חיפושית הקידוד) בנושא: "${topic}".\n`;
+                if (description && description.trim() !== '') {
+                    prompt += `אוצר מילים מבוקש או מטרות פדגוגיות: "${description}".\n`;
+                }
+                prompt += `
+משטח הבלובוט הוא גריד של 6x6 משבצות.
+עליך לייצר מערך קצר, פשוט, צבעוני ומתוק שכולל כותרת מזמינה לילדים, סוג משחק, מטרה פדגוגית ברורה, הנחיות לפעילות בסיסית, הנחיות לפעילות מתקדמת (המתמקדת ברובוט), והוראות לפעילות תנועתית/חווייתית במרחב הגן העושה שימוש בכרטיסיות המודפסות מחוץ למשטח הבלו-בוט (ללא הרובוט).
+עליך ליצור בדיוק 5 כרטיסיות מגוונות המתאימות לנושא.
+
+החזר פורמט JSON בלבד, ללא מרקאפ או תגיות.
+`;
+
+                const payload = {
+                    contents: [{ parts: [{ text: prompt }] }],
+                    generationConfig: {
+                        responseMimeType: "application/json",
+                        responseSchema: {
+                            type: "OBJECT",
+                            properties: {
+                                activityTitle: { type: "STRING" },
+                                activityType: { type: "STRING" },
+                                goal: { type: "STRING" },
+                                basicInstructions: { type: "STRING" },
+                                advancedInstructions: { type: "STRING" },
+                                spaceActivityInstructions: { type: "STRING" },
+                                botStartPos: {
+                                    type: "OBJECT",
+                                    properties: { row: { type: "INTEGER" }, col: { type: "INTEGER" } },
+                                    required: ["row", "col"]
+                                },
+                                cards: {
+                                    type: "ARRAY",
+                                    items: {
+                                        type: "OBJECT",
+                                        properties: {
+                                            id: { type: "STRING" },
+                                            hebrewName: { type: "STRING" },
+                                            englishPrompt: { type: "STRING" },
+                                            row: { type: "INTEGER" },
+                                            col: { type: "INTEGER" }
+                                        },
+                                        required: ["id", "hebrewName", "englishPrompt", "row", "col"]
+                                    }
+                                }
+                            },
+                            required: ["activityTitle", "activityType", "goal", "basicInstructions", "advancedInstructions", "spaceActivityInstructions", "botStartPos", "cards"]
+                        }
+                    }
+                };
+
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${activeKey}`;
+                const response = await fetchWithRetry(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                const data = await response.json();
+                if (data.candidates?.[0]?.content?.parts?.[0]?.text) {
+                    return JSON.parse(data.candidates[0].content.parts[0].text.trim());
+                }
+                throw new Error("לא התקבל מבנה נתונים תקין מהבינה המלאכותית.");
+            };
+
+            const generateExtensionActivity = async (topic, currentPlan) => {
+                const activeKey = getActiveApiKey();
+                const prompt = `עבור הפעילות בנושא "${topic}", שנוצרה עם הכרטיסיות הבאות: ${JSON.stringify(currentPlan.cards)}. הצע פעילות נוספת עם רובוט הבלו-בוט על גבי המשטח. כתוב הצעה קצרה ומלהיבה לגננת (עד 3 משפטים בעברית).`;
+                const payload = { contents: [{ parts: [{ text: prompt }] }] };
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${activeKey}`;
+                const response = await fetchWithRetry(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await response.json();
+                return data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "לא הצלחנו לייצר פעילות נוספת כרגע.";
+            };
+
+            const generateSingleImage = async (prompt) => {
+                const activeKey = getActiveApiKey();
+                const payload = {
+                    instances: { prompt: prompt + ", flat vector kawaii style illustration, happy expression, vibrant colors, white background, educational children style, isolated, vector graphic" },
+                    parameters: { sampleCount: 1 }
+                };
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict?key=${activeKey}`;
+                const response = await fetchWithRetry(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await response.json();
+                if (data.predictions?.[0]?.bytesBase64Encoded) {
+                    return `data:image/png;base64,${data.predictions[0].bytesBase64Encoded}`;
+                }
+                throw new Error("שגיאה ביצירת התמונה.");
             };
 
             const handleGenerate = async (e) => {
@@ -340,8 +365,13 @@
                     playBeep('success');
                     showToast('הפעילות החדשה מוכנה! 🐞🎨');
                 } catch (err) {
-                    setError('חלה שגיאה תקשורת זמנית. ודאי שמפתח ה-API תקין ורענני את העמוד.');
                     setLoadingState({ isLoading: false, message: '' });
+                    if (err.message === "API_KEY_MISSING") {
+                        setError('מפתח API לא הוגדר. אנא לחצי על סמל גלגל השיניים (⚙️) בפינה השמאלית העליונה כדי להזין את מפתח ה-API החינמי שלך.');
+                        setShowSettings(true);
+                    } else {
+                        setError('חלה שגיאה בתקשורת עם שרתי ה-AI. ודאי שמפתח ה-API תקין ופעיל.');
+                    }
                 }
             };
 
@@ -388,6 +418,62 @@
 
             return (
                 <div className="min-h-screen pb-16 relative">
+                    {/* כפתור הגדרות צף עבור מפתח API */}
+                    <div className="absolute top-4 left-4 z-40 no-print">
+                        <button 
+                            onClick={() => setShowSettings(!showSettings)} 
+                            className="bg-white/90 hover:bg-white text-slate-700 p-2.5 rounded-full shadow-lg border border-slate-200 transition-all flex items-center justify-center"
+                            title="הגדרות מפתח API"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 animate-spin-slow" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                            </svg>
+                        </button>
+                    </div>
+
+                    {/* חלונית הגדרות מפתח API */}
+                    {showSettings && (
+                        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                            <div className="bg-white p-6 rounded-3xl max-w-md w-full shadow-2xl border border-slate-100 text-right" dir="rtl">
+                                <h3 className="text-xl font-bold text-slate-800 playful-title mb-2">🔑 הגדרת מפתח AI (API Key)</h3>
+                                <p className="text-sm text-slate-600 mb-4 leading-relaxed">
+                                    כאשר האפליקציה פועלת מחוץ לצ'אט (כמו ב-GitHub Pages), היא דורשת מפתח חינמי של גוגל כדי להפעיל את ייצור התמונות והפעילויות.
+                                </p>
+                                <div className="bg-amber-50 border border-amber-200 p-3 rounded-xl mb-4 text-xs text-amber-800 leading-normal">
+                                    💡 <strong>טיפ:</strong> תוכלי להנפיק מפתח בחינם תוך דקה בקישור: <a href="https://aistudio.google.com/" target="_blank" rel="noopener noreferrer" className="underline font-bold text-amber-900">Google AI Studio</a>.
+                                </div>
+                                <div className="space-y-3">
+                                    <label className="block text-xs font-bold text-slate-500">מפתח ה-API שלך:</label>
+                                    <input 
+                                        type="password" 
+                                        defaultValue={customApiKey}
+                                        id="settings-api-key"
+                                        placeholder="הדביקי כאן את המפתח (מתחיל ב-AIza...)" 
+                                        className="w-full p-3 border-2 border-slate-200 rounded-xl text-left outline-none focus:border-teal-500 font-mono text-sm"
+                                    />
+                                    <div className="flex gap-2 pt-2">
+                                        <button 
+                                            onClick={() => {
+                                                const val = document.getElementById('settings-api-key').value;
+                                                saveCustomApiKey(val);
+                                            }}
+                                            className="flex-1 bg-teal-600 hover:bg-teal-700 text-white font-bold py-2.5 rounded-xl text-sm transition-colors"
+                                        >
+                                            שמירה וחיבור
+                                        </button>
+                                        <button 
+                                            onClick={() => setShowSettings(false)}
+                                            className="px-4 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold py-2.5 rounded-xl text-sm transition-colors"
+                                        >
+                                            ביטול
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
                     <header className="bg-gradient-to-r from-teal-500 via-emerald-400 to-cyan-500 text-slate-900 py-6 px-4 shadow-md rounded-b-[2.5rem]">
                         <div className="max-w-4xl mx-auto flex items-center justify-between gap-4">
                             <div className="flex items-center gap-4">
@@ -444,6 +530,14 @@
                             {error && (
                                 <div className="bg-red-50 text-red-700 p-5 rounded-3xl border text-center shadow-sm font-bold">
                                     ⚠️ {error}
+                                    {!apiKey && !customApiKey && (
+                                        <button 
+                                            onClick={() => setShowSettings(true)} 
+                                            className="block mx-auto mt-3 bg-red-600 hover:bg-red-700 text-white text-xs font-bold py-2 px-4 rounded-xl shadow transition-colors"
+                                        >
+                                            לחצי כאן להגדרת מפתח ה-API
+                                        </button>
+                                    )}
                                 </div>
                             )}
 
