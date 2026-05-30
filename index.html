@@ -134,7 +134,7 @@
         // שימוש במערכת הזרקת המפתחות האוטומטית של ה-Canvas
         const apiKey = window.AI_API_KEY || ""; 
 
-        // קישורי ה-GitHub שלך לתמונות הסטטיות
+        // קישורי ה-GitHub שלך לתמונות הסטטיות (לוגו מתיא חיפה ורובוט בלו-בוט)
         const BLUE_BOT_IMAGE_URL = "https://raw.githubusercontent.com/EfratAviran/BlueBot/main/bluebot.jpg";
         const MATYA_HAIFA_LOGO_URL = "https://raw.githubusercontent.com/EfratAviran/BlueBot/main/matia.png";
 
@@ -174,7 +174,7 @@
             } catch (e) {}
         };
 
-        const fetchWithRetry = async (url, options, retries = 3, delay = 1000) => {
+        const fetchWithRetry = async (url, options, retries = 5, delay = 1000) => {
             try {
                 const response = await fetch(url, options);
                 if (!response.ok) {
@@ -182,7 +182,7 @@
                         await new Promise(res => setTimeout(res, delay));
                         return fetchWithRetry(url, options, retries - 1, delay * 2);
                     }
-                    throw new Error(`שגיאת תקשורת: ${response.status}`);
+                    throw new Error(`שגיאה ${response.status}`);
                 }
                 return response;
             } catch (err) {
@@ -201,10 +201,10 @@
             }
             prompt += `
 משטח הבלובוט הוא גריד של 6x6 משבצות.
-עליך לייצר מערך קצר, פשוט, צבעוני ומתוק שכולל כותרת מזמינה לילדים, סוג משחק, מטרה פדגוגית ברורה, הנחיות לפעילות בסיסית, הנחיות לפעילות מתקדמת (המתמקדת ברובוט), והוראות לפעילות תנועתית/חווייתית במרחב הגן העושה שימוש בכרסיטיות המודפסות מחוץ למשטח הבלו-בוט (ללא הרובוט).
+עליך לייצר מערך קצר, פשוט, צבעוני ומתוק שכולל כותרת מזמינה לילדים, סוג משחק, מטרה פדגוגית ברורה, הנחיות לפעילות בסיסית, הנחיות לפעילות מתקדמת (המתמקדת ברובוט), והוראות לפעילות תנועתית/חווייתית במרחב הגן העושה שימוש בכרטיסיות המודפסות מחוץ למשטח הבלו-בוט (ללא הרובוט).
 עליך ליצור בדיוק 5 כרטיסיות מגוונות המתאימות לנושא.
 
-החזר פורמט JSON בלבד.
+החזר פורמט JSON בלבד, ללא מרקאפ או תגיות.
 `;
 
             const payload = {
@@ -245,7 +245,7 @@
                 }
             };
 
-            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
             const response = await fetchWithRetry(apiUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -262,7 +262,7 @@
         const generateExtensionActivity = async (topic, currentPlan) => {
             const prompt = `עבור הפעילות בנושא "${topic}", שנוצרה עם הכרטיסיות הבאות: ${JSON.stringify(currentPlan.cards)}. הצע פעילות נוספת עם רובוט הבלו-בוט על גבי המשטח. כתוב הצעה קצרה ומלהיבה לגננת (עד 3 משפטים בעברית).`;
             const payload = { contents: [{ parts: [{ text: prompt }] }] };
-            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
             const response = await fetchWithRetry(apiUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -274,10 +274,10 @@
 
         const generateSingleImage = async (prompt) => {
             const payload = {
-                instances: [{ prompt: prompt + ", kawaii style for kids, white background, simple vector illustration" }],
+                instances: { prompt: prompt + ", flat vector kawaii style illustration, happy expression, vibrant colors, white background, educational children style, isolated, vector graphic" },
                 parameters: { sampleCount: 1 }
             };
-            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict?key=${apiKey}`;
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict?key=${apiKey}`;
             const response = await fetchWithRetry(apiUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -340,7 +340,7 @@
                     playBeep('success');
                     showToast('הפעילות החדשה מוכנה! 🐞🎨');
                 } catch (err) {
-                    setError('ודא שמערכת ה-Canvas מחוברת ושמפתח ה-API תקין.');
+                    setError('חלה שגיאה תקשורת זמנית. ודאי שמפתח ה-API תקין ורענני את העמוד.');
                     setLoadingState({ isLoading: false, message: '' });
                 }
             };
@@ -392,7 +392,7 @@
                         <div className="max-w-4xl mx-auto flex items-center justify-between gap-4">
                             <div className="flex items-center gap-4">
                                 {botLoadError ? <span className="text-6xl sm:text-7xl select-none">🐞</span> : (
-                                    <img src={BLUE_BOT_IMAGE_URL} alt="בלו-בוט" className="w-24 h-24 sm:w-28 sm:h-28 object-contain select-none" onError={() => setBotLoadError(true)} />
+                                    <img src={BLUE_BOT_IMAGE_URL} alt="בלו-בוט" className="w-24 h-24 sm:w-28 sm:h-28 object-contain select-none bg-white/90 p-1.5 rounded-2xl shadow-sm border border-teal-100" onError={() => setBotLoadError(true)} />
                                 )}
                                 <div>
                                     <h1 className="text-4xl sm:text-5xl font-black playful-title text-slate-950">בלו-בוט פלוס</h1>
@@ -416,7 +416,7 @@
                     <main className="max-w-6xl mx-auto px-4 mt-8 grid lg:grid-cols-12 gap-8">
                         <div className="lg:col-span-5 space-y-6">
                             <div className="bg-white p-6 rounded-3xl shadow-md border space-y-4">
-                                <h2 className="text-xl font-black text-slate-800 playful-title">🤖 יצירת פעילות חדשה</h2>
+                                <h2 className="text-xl font-black text-slate-800 playful-title">🤖 יצירת פעילות</h2>
                                 <form onSubmit={handleGenerate} className="space-y-4">
                                     <div>
                                         <label className="block text-xs font-bold text-slate-500 mb-1">נושא הפעילות:</label>
